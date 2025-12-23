@@ -15,6 +15,7 @@ from scanner import scan_multiple_paths
 from analyzer import analyze_files, filter_files, CATEGORIES
 from ui.file_table import FileTable
 from ui.preview_pane import PreviewPane
+from ui.visualizations import VisualizationWindow
 from ui.dialogs import (
     DriveSelectionDialog, ask_confirmation, show_info, show_error,
     FilePropertiesDialog, ExclusionListDialog
@@ -107,6 +108,7 @@ class MainWindow:
             variable=self.preview_var,
             command=self._toggle_preview
         )
+        view_menu.add_command(label="Visualizations...", command=self._show_visualizations)
         view_menu.add_separator()
         view_menu.add_command(label="Reset Filters", command=self._reset_filters)
 
@@ -625,3 +627,10 @@ class MainWindow:
                 self.preview_pane.show_file(selected[0])
             else:
                 self.preview_pane.clear()
+
+    def _show_visualizations(self):
+        """Show the visualization window."""
+        if not self.all_files:
+            show_info(self.root, "No Data", "Please scan drives first to see visualizations.")
+            return
+        VisualizationWindow(self.root, self.filtered_files)
