@@ -24,6 +24,7 @@ from ui.dialogs import (
 )
 
 from file_operations import move_files, compress_files, export_file_list
+from theme_manager import ThemeManager
 
 # Try to import send2trash for safe deletion
 try:
@@ -53,10 +54,18 @@ class MainWindow:
 
         # Load settings
         self._load_exclusions()
+        self._load_settings()
+
+        # Initialize theme manager
+        self.theme_manager = ThemeManager(root)
 
         self._create_widgets()
         self._create_menu()
         self._setup_callbacks()
+
+        # Apply theme after widgets are created
+        if self.is_dark_mode:
+            self.theme_manager.set_dark_mode(True)
 
     def _load_exclusions(self):
         """Load exclusion list from file."""
@@ -74,6 +83,33 @@ class MainWindow:
                 json.dump(self.exclusions, f, indent=2)
         except IOError as e:
             show_error(self.root, "Error", f"Could not save exclusions: {e}")
+
+    def _load_settings(self):
+        """Load application settings from file."""
+        self.is_dark_mode = False
+        self.window_geometry = None
+        try:
+            if os.path.exists(self.SETTINGS_FILE):
+                with open(self.SETTINGS_FILE, 'r') as f:
+                    settings = json.load(f)
+                    self.is_dark_mode = settings.get('dark_mode', False)
+                    self.window_geometry = settings.get('geometry', None)
+                    if self.window_geometry:
+                        self.root.geometry(self.window_geometry)
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    def _save_settings(self):
+        """Save application settings to file."""
+        try:
+            settings = {
+                'dark_mode': self.is_dark_mode,
+                'geometry': self.root.geometry()
+            }
+            with open(self.SETTINGS_FILE, 'w') as f:
+                json.dump(settings, f, indent=2)
+        except IOError:
+            pass
 
     def _setup_callbacks(self):
         """Set up callbacks for file table."""
@@ -118,6 +154,13 @@ class MainWindow:
             variable=self.preview_var,
             command=self._toggle_preview
         )
+        self.dark_mode_var = tk.BooleanVar(value=self.is_dark_mode)
+        view_menu.add_checkbutton(
+            label="Dark Mode",
+            variable=self.dark_mode_var,
+            command=self._toggle_dark_mode
+        )
+        view_menu.add_separator()
         view_menu.add_command(label="Visualizations...", command=self._show_visualizations)
         view_menu.add_separator()
         view_menu.add_command(label="Reset Filters", command=self._reset_filters)
@@ -145,24 +188,24 @@ class MainWindow:
         main_frame = ttk.Frame(self.root, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Top toolbar
-        self._create_toolbar(main_frame)
-
-        # Filter section
-        self._create_filters(main_frame)
-
-        # Content area (file table + preview pane)
+        # Content area (file table + preview pane) - create first for toolbar references
         content_frame = ttk.Frame(main_frame)
-        content_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
 
-        # Create file table
+        # Create file table first (needed by toolbar)
         self.file_table = FileTable(content_frame)
-        self.file_table.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # Create preview pane (initially visible)
         self.preview_pane = PreviewPane(content_frame, width=300)
-        self.preview_pane.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 0))
         self.preview_visible = True
+
+        # Now create toolbar and filters (they reference file_table)
+        self._create_toolbar(main_frame)
+        self._create_filters(main_frame)
+
+        # Pack content area after toolbar/filters
+        content_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+        self.file_table.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.preview_pane.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 0))
 
         # Bind file selection to preview update
         self.file_table.tree.bind('<<TreeviewSelect>>', self._on_file_select)
@@ -630,6 +673,12 @@ class MainWindow:
         else:
             self.preview_pane.pack_forget()
             self.preview_visible = False
+
+    def _toggle_dark_mode(self):
+        """Toggle dark mode on/off."""
+        self.is_dark_mode = self.dark_mode_var.get()
+        self.theme_manager.set_dark_mode(self.is_dark_mode)
+        self._save_settings()
 
     def _on_file_select(self, event=None):
         """Handle file selection - update preview pane."""
