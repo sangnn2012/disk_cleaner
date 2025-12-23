@@ -190,12 +190,37 @@ class MainWindow:
         filter_frame = ttk.LabelFrame(parent, text="Filters", padding=10)
         filter_frame.pack(fill=tk.X)
 
+        # Search bar (top row)
+        search_frame = ttk.Frame(filter_frame)
+        search_frame.pack(fill=tk.X, pady=(0, 8))
+
+        ttk.Label(search_frame, text="Search:").pack(side=tk.LEFT)
+        self.search_var = tk.StringVar()
+        self.search_entry = ttk.Entry(
+            search_frame,
+            textvariable=self.search_var,
+            width=40
+        )
+        self.search_entry.pack(side=tk.LEFT, padx=(5, 10), fill=tk.X, expand=True)
+        self.search_var.trace_add('write', lambda *args: self._on_search_change())
+
+        ttk.Button(
+            search_frame,
+            text="Clear",
+            command=self._clear_search,
+            width=8
+        ).pack(side=tk.LEFT)
+
+        # Filter row
+        filter_row = ttk.Frame(filter_frame)
+        filter_row.pack(fill=tk.X)
+
         # Category filter
-        ttk.Label(filter_frame, text="Category:").pack(side=tk.LEFT)
+        ttk.Label(filter_row, text="Category:").pack(side=tk.LEFT)
         self.category_var = tk.StringVar(value="All")
         categories = ["All"] + list(CATEGORIES.keys()) + ["Other"]
         category_combo = ttk.Combobox(
-            filter_frame,
+            filter_row,
             textvariable=self.category_var,
             values=categories,
             state='readonly',
@@ -205,11 +230,11 @@ class MainWindow:
         category_combo.bind('<<ComboboxSelected>>', lambda e: self._apply_filters())
 
         # Minimum size filter
-        ttk.Label(filter_frame, text="Min Size:").pack(side=tk.LEFT)
+        ttk.Label(filter_row, text="Min Size:").pack(side=tk.LEFT)
         self.min_size_var = tk.StringVar(value="0")
         sizes = ["0", "1 MB", "10 MB", "50 MB", "100 MB", "500 MB", "1 GB"]
         size_combo = ttk.Combobox(
-            filter_frame,
+            filter_row,
             textvariable=self.min_size_var,
             values=sizes,
             state='readonly',
@@ -219,11 +244,11 @@ class MainWindow:
         size_combo.bind('<<ComboboxSelected>>', lambda e: self._apply_filters())
 
         # Days since access filter
-        ttk.Label(filter_frame, text="Not accessed for:").pack(side=tk.LEFT)
+        ttk.Label(filter_row, text="Not accessed for:").pack(side=tk.LEFT)
         self.min_days_var = tk.StringVar(value="0 days")
         days = ["0 days", "7 days", "30 days", "90 days", "180 days", "365 days"]
         days_combo = ttk.Combobox(
-            filter_frame,
+            filter_row,
             textvariable=self.min_days_var,
             values=days,
             state='readonly',
@@ -234,14 +259,14 @@ class MainWindow:
 
         # Apply button
         ttk.Button(
-            filter_frame,
+            filter_row,
             text="Apply Filters",
             command=self._apply_filters
         ).pack(side=tk.LEFT, padx=10)
 
         # Reset button
         ttk.Button(
-            filter_frame,
+            filter_row,
             text="Reset",
             command=self._reset_filters
         ).pack(side=tk.LEFT)
@@ -466,6 +491,19 @@ class MainWindow:
         except (ValueError, IndexError):
             return 0
 
+    def _on_search_change(self):
+        """Handle search text change with debounce."""
+        # Cancel previous timer if exists
+        if hasattr(self, '_search_timer') and self._search_timer:
+            self.root.after_cancel(self._search_timer)
+        # Debounce: wait 300ms before applying filter
+        self._search_timer = self.root.after(300, self._apply_filters)
+
+    def _clear_search(self):
+        """Clear the search box."""
+        self.search_var.set("")
+        self._apply_filters()
+
     def _apply_filters(self):
         """Apply current filters to the file list."""
         if not self.all_files:
@@ -475,6 +513,7 @@ class MainWindow:
         categories = None if category == "All" else [category]
         min_size = self._parse_size(self.min_size_var.get())
         min_days = self._parse_days(self.min_days_var.get())
+        search_term = self.search_var.get().strip().lower()
 
         # Apply standard filters
         self.filtered_files = filter_files(
@@ -490,6 +529,14 @@ class MainWindow:
             if not self._is_excluded(f['file_info'].path)
         ]
 
+        # Apply search filter
+        if search_term:
+            self.filtered_files = [
+                f for f in self.filtered_files
+                if search_term in f['file_info'].name.lower()
+                or search_term in f['file_info'].path.lower()
+            ]
+
         self.file_table.load_files(self.filtered_files)
 
         total_size = sum(f['file_info'].size for f in self.filtered_files)
@@ -503,6 +550,7 @@ class MainWindow:
         self.category_var.set("All")
         self.min_size_var.set("0")
         self.min_days_var.set("0 days")
+        self.search_var.set("")
         self._apply_filters()
 
     def _update_selection_info(self, event=None):
