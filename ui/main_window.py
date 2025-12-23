@@ -39,6 +39,7 @@ class MainWindow:
 
     SETTINGS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'settings.json')
     EXCLUSIONS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'exclusions.json')
+    PROFILES_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'profiles.json')
 
     def __init__(self, root):
         self.root = root
@@ -55,6 +56,7 @@ class MainWindow:
         # Load settings
         self._load_exclusions()
         self._load_settings()
+        self._load_profiles()
 
         # Initialize theme manager
         self.theme_manager = ThemeManager(root)
@@ -111,6 +113,24 @@ class MainWindow:
         except IOError:
             pass
 
+    def _load_profiles(self):
+        """Load filter profiles from file."""
+        self.profiles = {}
+        try:
+            if os.path.exists(self.PROFILES_FILE):
+                with open(self.PROFILES_FILE, 'r') as f:
+                    self.profiles = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            self.profiles = {}
+
+    def _save_profiles(self):
+        """Save filter profiles to file."""
+        try:
+            with open(self.PROFILES_FILE, 'w') as f:
+                json.dump(self.profiles, f, indent=2)
+        except IOError:
+            pass
+
     def _setup_callbacks(self):
         """Set up callbacks for file table."""
         self.file_table.on_exclude_file = self._add_to_exclusion
@@ -164,6 +184,14 @@ class MainWindow:
         view_menu.add_command(label="Visualizations...", command=self._show_visualizations)
         view_menu.add_separator()
         view_menu.add_command(label="Reset Filters", command=self._reset_filters)
+
+        # Profiles menu
+        self.profiles_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Profiles", menu=self.profiles_menu)
+        self.profiles_menu.add_command(label="Save Current as Profile...", command=self._save_profile)
+        self.profiles_menu.add_command(label="Manage Profiles...", command=self._manage_profiles)
+        self.profiles_menu.add_separator()
+        self._rebuild_profiles_menu()
 
         # Tools menu
         tools_menu = tk.Menu(menubar, tearoff=0)
@@ -848,3 +876,174 @@ class MainWindow:
                 webbrowser.open(f'file://{path}')
             else:
                 show_error(self.root, "Export Failed", "Could not export file list.")
+
+    def _rebuild_profiles_menu(self):
+        """Rebuild the profiles menu with saved profiles."""
+        # Remove existing profile entries (after separator)
+        try:
+            last = self.profiles_menu.index('end')
+            if last is not None and last >= 3:
+                for i in range(last, 2, -1):
+                    self.profiles_menu.delete(i)
+        except tk.TclError:
+            pass
+
+        # Add saved profiles
+        if self.profiles:
+            for name in sorted(self.profiles.keys()):
+                self.profiles_menu.add_command(
+                    label=f"Load: {name}",
+                    command=lambda n=name: self._load_profile(n)
+                )
+
+    def _save_profile(self):
+        """Save current filter settings as a profile."""
+        from tkinter import simpledialog
+
+        name = simpledialog.askstring(
+            "Save Profile",
+            "Enter profile name:",
+            parent=self.root
+        )
+
+        if not name:
+            return
+
+        name = name.strip()
+        if not name:
+            return
+
+        # Save current filter values
+        profile = {
+            'category': self.category_var.get(),
+            'min_size': self.min_size_var.get(),
+            'min_days': self.min_days_var.get(),
+            'search': self.search_var.get()
+        }
+
+        self.profiles[name] = profile
+        self._save_profiles()
+        self._rebuild_profiles_menu()
+
+        show_info(self.root, "Profile Saved", f"Profile '{name}' has been saved.")
+
+    def _load_profile(self, name: str):
+        """Load a saved profile."""
+        if name not in self.profiles:
+            return
+
+        profile = self.profiles[name]
+
+        # Apply profile settings
+        self.category_var.set(profile.get('category', 'All'))
+        self.min_size_var.set(profile.get('min_size', '0'))
+        self.min_days_var.set(profile.get('min_days', '0 days'))
+        self.search_var.set(profile.get('search', ''))
+
+        self._apply_filters()
+        self.status_var.set(f"Loaded profile: {name}")
+
+    def _manage_profiles(self):
+        """Open profile management dialog."""
+        ProfileManagerDialog(self.root, self.profiles, self._on_profiles_changed)
+
+    def _on_profiles_changed(self, new_profiles: dict):
+        """Called when profiles are modified in the manager."""
+        self.profiles = new_profiles
+        self._save_profiles()
+        self._rebuild_profiles_menu()
+
+
+class ProfileManagerDialog:
+    """Dialog for managing saved filter profiles."""
+
+    def __init__(self, parent, profiles: dict, on_save):
+        self.profiles = profiles.copy()
+        self.on_save = on_save
+
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Manage Profiles")
+        self.dialog.geometry("400x300")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+
+        self._create_widgets()
+
+        # Center on parent
+        self.dialog.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() - self.dialog.winfo_width()) // 2
+        y = parent.winfo_y() + (parent.winfo_height() - self.dialog.winfo_height()) // 2
+        self.dialog.geometry(f"+{x}+{y}")
+
+    def _create_widgets(self):
+        """Create dialog widgets."""
+        main_frame = ttk.Frame(self.dialog, padding=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # List of profiles
+        ttk.Label(
+            main_frame,
+            text="Saved Profiles:",
+            font=('Segoe UI', 10, 'bold')
+        ).pack(anchor=tk.W)
+
+        list_frame = ttk.Frame(main_frame)
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        self.profile_list = tk.Listbox(
+            list_frame,
+            selectmode=tk.SINGLE,
+            font=('Consolas', 10)
+        )
+        vsb = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.profile_list.yview)
+        self.profile_list.configure(yscrollcommand=vsb.set)
+
+        self.profile_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Populate list
+        for name in sorted(self.profiles.keys()):
+            self.profile_list.insert(tk.END, name)
+
+        # Buttons
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, pady=(10, 0))
+
+        ttk.Button(
+            btn_frame,
+            text="Delete Selected",
+            command=self._delete_selected
+        ).pack(side=tk.LEFT, padx=(0, 5))
+
+        ttk.Button(
+            btn_frame,
+            text="Delete All",
+            command=self._delete_all
+        ).pack(side=tk.LEFT)
+
+        ttk.Button(
+            btn_frame,
+            text="Close",
+            command=self._close
+        ).pack(side=tk.RIGHT)
+
+    def _delete_selected(self):
+        """Delete the selected profile."""
+        selection = self.profile_list.curselection()
+        if not selection:
+            return
+
+        name = self.profile_list.get(selection[0])
+        if name in self.profiles:
+            del self.profiles[name]
+            self.profile_list.delete(selection[0])
+
+    def _delete_all(self):
+        """Delete all profiles."""
+        self.profiles.clear()
+        self.profile_list.delete(0, tk.END)
+
+    def _close(self):
+        """Close the dialog and save changes."""
+        self.on_save(self.profiles)
+        self.dialog.destroy()
