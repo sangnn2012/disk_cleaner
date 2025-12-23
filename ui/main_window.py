@@ -683,13 +683,21 @@ class MainWindow:
             self.root,
             "About Disk Space Analyzer",
             "Disk Space Analyzer v2.0\n\n"
-            "A tool to find and delete unused files.\n\n"
+            "A comprehensive tool to find and manage unused files.\n\n"
             "Features:\n"
-            "- Scan entire drives\n"
-            "- Filter by category, size, and age\n"
+            "- Scan entire drives or specific folders\n"
+            "- Filter by category, size, and last access date\n"
+            "- Search files by name or path\n"
             "- Right-click context menu\n"
-            "- Preview pane for images\n"
-            "- Exclusion list\n"
+            "- Preview pane for images and file info\n"
+            "- Visualizations (pie chart, treemap, folder view)\n"
+            "- Duplicate file finder with smart comparison\n"
+            "- Smart analysis (temp files, old downloads, large folders)\n"
+            "- Move and compress files\n"
+            "- Export reports to CSV/HTML\n"
+            "- Dark mode support\n"
+            "- Filter profiles for quick access\n"
+            "- Exclusion list for protected paths\n"
             "- Safe deletion to Recycle Bin"
         )
 
