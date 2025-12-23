@@ -522,18 +522,29 @@ class MainWindow:
 
     def _scan_worker(self, drives):
         """Worker thread for scanning."""
+        self._last_update = 0
+
         def progress_callback(path, count):
-            self.root.after(0, lambda: self.status_var.set(
-                f"Scanning... {count:,} files found. Current: {path[:50]}..."
-            ))
+            # Throttle updates to every 200ms to keep UI responsive
+            import time
+            current_time = time.time()
+            if current_time - self._last_update >= 0.2:
+                self._last_update = current_time
+                self.root.after(0, lambda p=path, c=count: self.status_var.set(
+                    f"Scanning... {c:,} files found. Current: {p[:50]}..."
+                ))
 
         def stop_flag():
             return self.stop_scan
 
         try:
             files = scan_multiple_paths(drives, progress_callback, stop_flag)
-            analyzed = analyze_files(files)
-            self.root.after(0, lambda: self._scan_complete(analyzed))
+            if self.stop_scan:
+                analyzed = analyze_files(files)
+                self.root.after(0, lambda: self._scan_stopped(analyzed))
+            else:
+                analyzed = analyze_files(files)
+                self.root.after(0, lambda: self._scan_complete(analyzed))
         except Exception as e:
             self.root.after(0, lambda: self._scan_error(str(e)))
 
@@ -550,6 +561,24 @@ class MainWindow:
 
         self.status_var.set(
             f"Scan complete! Found {len(analyzed_files):,} files "
+            f"({format_size(total_size)} total)"
+        )
+
+        self._apply_filters()
+
+    def _scan_stopped(self, analyzed_files):
+        """Called when scan is stopped by user."""
+        self.progress.stop()
+        self.scan_btn.config(state=tk.NORMAL)
+        self.stop_btn.config(state=tk.DISABLED)
+
+        self.all_files = analyzed_files
+        self.filtered_files = analyzed_files
+
+        total_size = sum(f['file_info'].size for f in analyzed_files)
+
+        self.status_var.set(
+            f"Scan stopped. Found {len(analyzed_files):,} files "
             f"({format_size(total_size)} total)"
         )
 
