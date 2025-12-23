@@ -56,18 +56,22 @@ def scan_directory(
     """
     files = []
     file_count = 0
+    stopped = False
 
     try:
         for dirpath, dirnames, filenames in os.walk(root_path, topdown=True):
             # Check if scanning should stop
             if stop_flag and stop_flag():
+                stopped = True
                 break
 
             # Filter out system folders
             dirnames[:] = [d for d in dirnames if d not in SKIP_FOLDERS and not d.startswith('.')]
 
             for filename in filenames:
-                if stop_flag and stop_flag():
+                # Check stop flag every 10 files for responsiveness
+                if file_count % 10 == 0 and stop_flag and stop_flag():
+                    stopped = True
                     break
 
                 filepath = os.path.join(dirpath, filename)
@@ -85,13 +89,16 @@ def scan_directory(
                     files.append(file_info)
                     file_count += 1
 
-                    # Update progress every 100 files
-                    if progress_callback and file_count % 100 == 0:
+                    # Update progress every 50 files
+                    if progress_callback and file_count % 50 == 0:
                         progress_callback(dirpath, file_count)
 
                 except (PermissionError, OSError, FileNotFoundError):
                     # Skip files we can't access
                     continue
+
+            if stopped:
+                break
 
     except (PermissionError, OSError):
         # Skip directories we can't access
@@ -99,7 +106,7 @@ def scan_directory(
 
     # Final progress update
     if progress_callback:
-        progress_callback("Scan complete", file_count)
+        progress_callback("Scan complete" if not stopped else "Scan stopped", file_count)
 
     return files
 

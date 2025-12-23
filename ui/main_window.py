@@ -603,15 +603,16 @@ class MainWindow:
         if size_str == "0":
             return 0
 
-        multipliers = {
-            'B': 1,
-            'KB': 1024,
-            'MB': 1024 ** 2,
-            'GB': 1024 ** 3,
-            'TB': 1024 ** 4,
-        }
+        # Check longer suffixes first to avoid 'B' matching before 'MB'
+        multipliers = [
+            ('TB', 1024 ** 4),
+            ('GB', 1024 ** 3),
+            ('MB', 1024 ** 2),
+            ('KB', 1024),
+            ('B', 1),
+        ]
 
-        for suffix, mult in multipliers.items():
+        for suffix, mult in multipliers:
             if size_str.endswith(suffix):
                 num = size_str[:-len(suffix)].strip()
                 try:
