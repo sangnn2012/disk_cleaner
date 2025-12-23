@@ -17,6 +17,7 @@ from ui.file_table import FileTable
 from ui.preview_pane import PreviewPane
 from ui.visualizations import VisualizationWindow
 from ui.duplicate_view import DuplicateFinderWindow
+from ui.smart_analysis_view import SmartAnalysisWindow
 from ui.dialogs import (
     DriveSelectionDialog, ask_confirmation, show_info, show_error,
     FilePropertiesDialog, ExclusionListDialog
@@ -117,6 +118,7 @@ class MainWindow:
         tools_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Tools", menu=tools_menu)
         tools_menu.add_command(label="Find Duplicates...", command=self._find_duplicates)
+        tools_menu.add_command(label="Smart Analysis...", command=self._smart_analysis)
 
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
@@ -647,3 +649,10 @@ class MainWindow:
             show_info(self.root, "No Data", "Please scan drives first to find duplicates.")
             return
         DuplicateFinderWindow(self.root, self.filtered_files)
+
+    def _smart_analysis(self):
+        """Open the smart analysis window."""
+        if not self.all_files:
+            show_info(self.root, "No Data", "Please scan drives first for analysis.")
+            return
+        SmartAnalysisWindow(self.root, self.all_files)
