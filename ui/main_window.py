@@ -23,6 +23,8 @@ from ui.dialogs import (
     FilePropertiesDialog, ExclusionListDialog
 )
 
+from file_operations import move_files, compress_files, export_file_list
+
 # Try to import send2trash for safe deletion
 try:
     from send2trash import send2trash
@@ -89,6 +91,9 @@ class MainWindow:
         menubar.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="New Scan", command=self._on_scan, accelerator="Ctrl+N")
         file_menu.add_separator()
+        file_menu.add_command(label="Export to CSV...", command=self._export_csv)
+        file_menu.add_command(label="Export to HTML...", command=self._export_html)
+        file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.root.quit, accelerator="Alt+F4")
 
         # Edit menu
@@ -96,6 +101,9 @@ class MainWindow:
         menubar.add_cascade(label="Edit", menu=edit_menu)
         edit_menu.add_command(label="Select All", command=self.file_table.select_all, accelerator="Ctrl+A")
         edit_menu.add_command(label="Deselect All", command=self.file_table.deselect_all)
+        edit_menu.add_separator()
+        edit_menu.add_command(label="Move Selected...", command=self._move_selected)
+        edit_menu.add_command(label="Compress Selected...", command=self._compress_selected)
         edit_menu.add_separator()
         edit_menu.add_command(label="Exclusion List...", command=self._show_exclusion_list)
 
@@ -656,3 +664,138 @@ class MainWindow:
             show_info(self.root, "No Data", "Please scan drives first for analysis.")
             return
         SmartAnalysisWindow(self.root, self.all_files)
+
+    def _move_selected(self):
+        """Move selected files to a new location."""
+        from ui.dialogs import MoveFilesDialog
+
+        selected = self.file_table.get_selected_files()
+        if not selected:
+            show_info(self.root, "No Selection", "Please select files to move.")
+            return
+
+        total_size = sum(f['file_info'].size for f in selected)
+        dialog = MoveFilesDialog(self.root, len(selected), total_size)
+
+        if dialog.result:
+            dest = dialog.result['destination']
+            keep_structure = dialog.result['keep_structure']
+
+            # Run move in background
+            import threading
+
+            def do_move():
+                stats = move_files(selected, dest, keep_structure)
+                self.root.after(0, lambda: self._move_complete(stats, selected))
+
+            threading.Thread(target=do_move, daemon=True).start()
+
+    def _move_complete(self, stats, moved_files):
+        """Called when move operation completes."""
+        if stats['moved'] > 0:
+            # Remove moved files from list
+            for file_dict in moved_files[:stats['moved']]:
+                if file_dict in self.all_files:
+                    self.all_files.remove(file_dict)
+            self._apply_filters()
+
+        show_info(
+            self.root,
+            "Move Complete",
+            f"Moved: {stats['moved']}\n"
+            f"Failed: {stats['failed']}\n"
+            f"Size: {format_size(stats['total_size'])}"
+        )
+
+    def _compress_selected(self):
+        """Compress selected files into a ZIP archive."""
+        from tkinter import filedialog
+
+        selected = self.file_table.get_selected_files()
+        if not selected:
+            show_info(self.root, "No Selection", "Please select files to compress.")
+            return
+
+        # Ask for archive location
+        archive_path = filedialog.asksaveasfilename(
+            parent=self.root,
+            title="Save Archive As",
+            defaultextension=".zip",
+            filetypes=[("ZIP files", "*.zip"), ("All files", "*.*")]
+        )
+
+        if not archive_path:
+            return
+
+        # Run compression in background
+        import threading
+
+        def do_compress():
+            stats = compress_files(selected, archive_path)
+            self.root.after(0, lambda: self._compress_complete(stats))
+
+        threading.Thread(target=do_compress, daemon=True).start()
+
+    def _compress_complete(self, stats):
+        """Called when compression completes."""
+        if stats['compressed'] > 0:
+            savings = stats['original_size'] - stats['archive_size']
+            ratio = (1 - stats['archive_size'] / stats['original_size']) * 100 if stats['original_size'] > 0 else 0
+
+            show_info(
+                self.root,
+                "Compression Complete",
+                f"Compressed: {stats['compressed']} files\n"
+                f"Original size: {format_size(stats['original_size'])}\n"
+                f"Archive size: {format_size(stats['archive_size'])}\n"
+                f"Saved: {format_size(savings)} ({ratio:.1f}%)"
+            )
+        else:
+            show_error(
+                self.root,
+                "Compression Failed",
+                "Failed to compress files.\n" + "\n".join(stats['errors'][:5])
+            )
+
+    def _export_csv(self):
+        """Export file list to CSV."""
+        if not self.filtered_files:
+            show_info(self.root, "No Data", "No files to export.")
+            return
+
+        from tkinter import filedialog
+        path = filedialog.asksaveasfilename(
+            parent=self.root,
+            title="Export to CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+
+        if path:
+            if export_file_list(self.filtered_files, path, 'csv'):
+                show_info(self.root, "Export Complete", f"Exported to:\n{path}")
+            else:
+                show_error(self.root, "Export Failed", "Could not export file list.")
+
+    def _export_html(self):
+        """Export file list to HTML."""
+        if not self.filtered_files:
+            show_info(self.root, "No Data", "No files to export.")
+            return
+
+        from tkinter import filedialog
+        path = filedialog.asksaveasfilename(
+            parent=self.root,
+            title="Export to HTML",
+            defaultextension=".html",
+            filetypes=[("HTML files", "*.html"), ("All files", "*.*")]
+        )
+
+        if path:
+            if export_file_list(self.filtered_files, path, 'html'):
+                show_info(self.root, "Export Complete", f"Exported to:\n{path}")
+                # Optionally open in browser
+                import webbrowser
+                webbrowser.open(f'file://{path}')
+            else:
+                show_error(self.root, "Export Failed", "Could not export file list.")
