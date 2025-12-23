@@ -3,6 +3,7 @@
 import tkinter as tk
 from tkinter import ttk
 import threading
+import json
 import sys
 import os
 
@@ -13,7 +14,10 @@ from utils import format_size, get_available_drives
 from scanner import scan_multiple_paths
 from analyzer import analyze_files, filter_files, CATEGORIES
 from ui.file_table import FileTable
-from ui.dialogs import DriveSelectionDialog, ask_confirmation, show_info, show_error
+from ui.dialogs import (
+    DriveSelectionDialog, ask_confirmation, show_info, show_error,
+    FilePropertiesDialog, ExclusionListDialog
+)
 
 # Try to import send2trash for safe deletion
 try:
@@ -26,6 +30,9 @@ except ImportError:
 class MainWindow:
     """Main application window."""
 
+    SETTINGS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'settings.json')
+    EXCLUSIONS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'exclusions.json')
+
     def __init__(self, root):
         self.root = root
         self.root.title("Disk Space Analyzer")
@@ -34,11 +41,39 @@ class MainWindow:
 
         self.all_files = []  # All scanned files
         self.filtered_files = []  # Currently displayed files
+        self.exclusions = []  # Excluded paths
         self.scan_thread = None
         self.stop_scan = False
 
+        # Load settings
+        self._load_exclusions()
+
         self._create_widgets()
         self._create_menu()
+        self._setup_callbacks()
+
+    def _load_exclusions(self):
+        """Load exclusion list from file."""
+        try:
+            if os.path.exists(self.EXCLUSIONS_FILE):
+                with open(self.EXCLUSIONS_FILE, 'r') as f:
+                    self.exclusions = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            self.exclusions = []
+
+    def _save_exclusions(self):
+        """Save exclusion list to file."""
+        try:
+            with open(self.EXCLUSIONS_FILE, 'w') as f:
+                json.dump(self.exclusions, f, indent=2)
+        except IOError as e:
+            show_error(self.root, "Error", f"Could not save exclusions: {e}")
+
+    def _setup_callbacks(self):
+        """Set up callbacks for file table."""
+        self.file_table.on_exclude_file = self._add_to_exclusion
+        self.file_table.on_show_properties = self._show_file_properties
+        self.file_table.on_delete_files = self._delete_files
 
     def _create_menu(self):
         """Create the menu bar."""
@@ -48,14 +83,35 @@ class MainWindow:
         # File menu
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="New Scan", command=self._on_scan)
+        file_menu.add_command(label="New Scan", command=self._on_scan, accelerator="Ctrl+N")
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.root.quit)
+        file_menu.add_command(label="Exit", command=self.root.quit, accelerator="Alt+F4")
+
+        # Edit menu
+        edit_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Edit", menu=edit_menu)
+        edit_menu.add_command(label="Select All", command=self.file_table.select_all, accelerator="Ctrl+A")
+        edit_menu.add_command(label="Deselect All", command=self.file_table.deselect_all)
+        edit_menu.add_separator()
+        edit_menu.add_command(label="Exclusion List...", command=self._show_exclusion_list)
+
+        # View menu
+        view_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="View", menu=view_menu)
+        view_menu.add_command(label="Refresh", command=self._apply_filters, accelerator="F5")
+        view_menu.add_separator()
+        view_menu.add_command(label="Reset Filters", command=self._reset_filters)
 
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="About", command=self._show_about)
+
+        # Keyboard shortcuts
+        self.root.bind('<Control-n>', lambda e: self._on_scan())
+        self.root.bind('<Control-a>', lambda e: self.file_table.select_all())
+        self.root.bind('<F5>', lambda e: self._apply_filters())
+        self.root.bind('<Delete>', lambda e: self._on_delete())
 
     def _create_widgets(self):
         """Create all UI widgets."""
@@ -221,25 +277,102 @@ class MainWindow:
         # Bind selection update
         self.file_table.tree.bind('<<TreeviewSelect>>', self._update_selection_info)
 
+    def _add_to_exclusion(self, path: str):
+        """Add a path to the exclusion list."""
+        if path not in self.exclusions:
+            self.exclusions.append(path)
+            self._save_exclusions()
+            show_info(self.root, "Exclusion Added", f"Added to exclusion list:\n{path}")
+            # Refresh to hide excluded files
+            self._apply_filters()
+
+    def _show_exclusion_list(self):
+        """Show the exclusion list management dialog."""
+        def on_save(new_exclusions):
+            self.exclusions = new_exclusions
+            self._save_exclusions()
+            self._apply_filters()
+
+        ExclusionListDialog(self.root, self.exclusions, on_save)
+
+    def _show_file_properties(self, file_dict: dict):
+        """Show properties dialog for a file."""
+        FilePropertiesDialog(self.root, file_dict)
+
+    def _delete_files(self, file_dicts: list):
+        """Delete files (called from context menu)."""
+        if not HAS_SEND2TRASH:
+            show_error(
+                self.root,
+                "Missing Dependency",
+                "Please install send2trash: pip install send2trash"
+            )
+            return
+
+        if not file_dicts:
+            return
+
+        total_size = sum(f['file_info'].size for f in file_dicts)
+        paths = [f['file_info'].path for f in file_dicts]
+
+        if not ask_confirmation(self.root, paths, total_size):
+            return
+
+        deleted_count = 0
+        failed_count = 0
+
+        for file_dict in file_dicts:
+            path = file_dict['file_info'].path
+            try:
+                send2trash(path)
+                deleted_count += 1
+                if file_dict in self.all_files:
+                    self.all_files.remove(file_dict)
+            except Exception:
+                failed_count += 1
+
+        self._apply_filters()
+
+        if failed_count == 0:
+            show_info(
+                self.root,
+                "Deletion Complete",
+                f"Successfully moved {deleted_count} file(s) to Recycle Bin.\n"
+                f"Freed: {format_size(total_size)}"
+            )
+        else:
+            show_info(
+                self.root,
+                "Deletion Complete",
+                f"Moved {deleted_count} file(s) to Recycle Bin.\n"
+                f"Failed to delete {failed_count} file(s)."
+            )
+
+    def _is_excluded(self, path: str) -> bool:
+        """Check if a path is in the exclusion list."""
+        path_lower = path.lower()
+        for exc in self.exclusions:
+            exc_lower = exc.lower()
+            if path_lower == exc_lower or path_lower.startswith(exc_lower + os.sep):
+                return True
+        return False
+
     def _on_scan(self):
         """Handle scan button click."""
-        # Get available drives
         drives = get_available_drives()
         if not drives:
             show_error(self.root, "Error", "No drives found!")
             return
 
-        # Show drive selection dialog
         dialog = DriveSelectionDialog(self.root, drives)
         if not dialog.result:
-            return  # User cancelled
+            return
 
         selected_drives = dialog.result
         if not selected_drives:
             show_info(self.root, "Info", "No drives selected.")
             return
 
-        # Start scanning
         self.stop_scan = False
         self.scan_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
@@ -248,7 +381,6 @@ class MainWindow:
         self.progress.start(10)
         self.status_var.set("Scanning...")
 
-        # Run scan in background thread
         self.scan_thread = threading.Thread(
             target=self._scan_worker,
             args=(selected_drives,),
@@ -259,7 +391,6 @@ class MainWindow:
     def _scan_worker(self, drives):
         """Worker thread for scanning."""
         def progress_callback(path, count):
-            # Update UI from main thread
             self.root.after(0, lambda: self.status_var.set(
                 f"Scanning... {count:,} files found. Current: {path[:50]}..."
             ))
@@ -270,8 +401,6 @@ class MainWindow:
         try:
             files = scan_multiple_paths(drives, progress_callback, stop_flag)
             analyzed = analyze_files(files)
-
-            # Update UI from main thread
             self.root.after(0, lambda: self._scan_complete(analyzed))
         except Exception as e:
             self.root.after(0, lambda: self._scan_error(str(e)))
@@ -285,7 +414,6 @@ class MainWindow:
         self.all_files = analyzed_files
         self.filtered_files = analyzed_files
 
-        # Calculate total size
         total_size = sum(f['file_info'].size for f in analyzed_files)
 
         self.status_var.set(
@@ -343,13 +471,12 @@ class MainWindow:
         if not self.all_files:
             return
 
-        # Get filter values
         category = self.category_var.get()
         categories = None if category == "All" else [category]
         min_size = self._parse_size(self.min_size_var.get())
         min_days = self._parse_days(self.min_days_var.get())
 
-        # Apply filters
+        # Apply standard filters
         self.filtered_files = filter_files(
             self.all_files,
             categories=categories,
@@ -357,10 +484,14 @@ class MainWindow:
             min_days_old=min_days
         )
 
-        # Update table
+        # Apply exclusion filter
+        self.filtered_files = [
+            f for f in self.filtered_files
+            if not self._is_excluded(f['file_info'].path)
+        ]
+
         self.file_table.load_files(self.filtered_files)
 
-        # Update status
         total_size = sum(f['file_info'].size for f in self.filtered_files)
         self.status_var.set(
             f"Showing {len(self.filtered_files):,} files "
@@ -385,70 +516,23 @@ class MainWindow:
 
     def _on_delete(self):
         """Handle delete button click."""
-        if not HAS_SEND2TRASH:
-            show_error(
-                self.root,
-                "Missing Dependency",
-                "Please install send2trash: pip install send2trash"
-            )
-            return
-
         selected = self.file_table.get_selected_files()
-        if not selected:
-            show_info(self.root, "No Selection", "Please select files to delete.")
-            return
-
-        # Calculate total size
-        total_size = sum(f['file_info'].size for f in selected)
-        paths = [f['file_info'].path for f in selected]
-
-        # Confirm deletion
-        if not ask_confirmation(self.root, paths, total_size):
-            return
-
-        # Delete files
-        deleted_count = 0
-        failed_count = 0
-
-        for file_dict in selected:
-            path = file_dict['file_info'].path
-            try:
-                send2trash(path)
-                deleted_count += 1
-                # Remove from data
-                if file_dict in self.all_files:
-                    self.all_files.remove(file_dict)
-            except Exception as e:
-                failed_count += 1
-
-        # Refresh display
-        self._apply_filters()
-
-        # Show result
-        if failed_count == 0:
-            show_info(
-                self.root,
-                "Deletion Complete",
-                f"Successfully moved {deleted_count} file(s) to Recycle Bin.\n"
-                f"Freed: {format_size(total_size)}"
-            )
+        if selected:
+            self._delete_files(selected)
         else:
-            show_info(
-                self.root,
-                "Deletion Complete",
-                f"Moved {deleted_count} file(s) to Recycle Bin.\n"
-                f"Failed to delete {failed_count} file(s)."
-            )
+            show_info(self.root, "No Selection", "Please select files to delete.")
 
     def _show_about(self):
         """Show about dialog."""
         show_info(
             self.root,
             "About Disk Space Analyzer",
-            "Disk Space Analyzer v1.0\n\n"
+            "Disk Space Analyzer v2.0\n\n"
             "A tool to find and delete unused files.\n\n"
             "Features:\n"
             "- Scan entire drives\n"
             "- Filter by category, size, and age\n"
+            "- Right-click context menu\n"
+            "- Exclusion list\n"
             "- Safe deletion to Recycle Bin"
         )
