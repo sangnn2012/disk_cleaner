@@ -16,6 +16,7 @@ from analyzer import analyze_files, filter_files, CATEGORIES
 from ui.file_table import FileTable
 from ui.preview_pane import PreviewPane
 from ui.visualizations import VisualizationWindow
+from ui.duplicate_view import DuplicateFinderWindow
 from ui.dialogs import (
     DriveSelectionDialog, ask_confirmation, show_info, show_error,
     FilePropertiesDialog, ExclusionListDialog
@@ -111,6 +112,11 @@ class MainWindow:
         view_menu.add_command(label="Visualizations...", command=self._show_visualizations)
         view_menu.add_separator()
         view_menu.add_command(label="Reset Filters", command=self._reset_filters)
+
+        # Tools menu
+        tools_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Tools", menu=tools_menu)
+        tools_menu.add_command(label="Find Duplicates...", command=self._find_duplicates)
 
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
@@ -634,3 +640,10 @@ class MainWindow:
             show_info(self.root, "No Data", "Please scan drives first to see visualizations.")
             return
         VisualizationWindow(self.root, self.filtered_files)
+
+    def _find_duplicates(self):
+        """Open the duplicate file finder."""
+        if not self.all_files:
+            show_info(self.root, "No Data", "Please scan drives first to find duplicates.")
+            return
+        DuplicateFinderWindow(self.root, self.filtered_files)
