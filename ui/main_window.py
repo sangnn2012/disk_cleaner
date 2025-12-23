@@ -14,6 +14,7 @@ from utils import format_size, get_available_drives
 from scanner import scan_multiple_paths
 from analyzer import analyze_files, filter_files, CATEGORIES
 from ui.file_table import FileTable
+from ui.preview_pane import PreviewPane
 from ui.dialogs import (
     DriveSelectionDialog, ask_confirmation, show_info, show_error,
     FilePropertiesDialog, ExclusionListDialog
@@ -100,6 +101,13 @@ class MainWindow:
         menubar.add_cascade(label="View", menu=view_menu)
         view_menu.add_command(label="Refresh", command=self._apply_filters, accelerator="F5")
         view_menu.add_separator()
+        self.preview_var = tk.BooleanVar(value=True)
+        view_menu.add_checkbutton(
+            label="Preview Pane",
+            variable=self.preview_var,
+            command=self._toggle_preview
+        )
+        view_menu.add_separator()
         view_menu.add_command(label="Reset Filters", command=self._reset_filters)
 
         # Help menu
@@ -119,17 +127,27 @@ class MainWindow:
         main_frame = ttk.Frame(self.root, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Create file table first (needed by toolbar)
-        self.file_table = FileTable(main_frame)
-
         # Top toolbar
         self._create_toolbar(main_frame)
 
         # Filter section
         self._create_filters(main_frame)
 
-        # Pack file table after toolbar and filters
-        self.file_table.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+        # Content area (file table + preview pane)
+        content_frame = ttk.Frame(main_frame)
+        content_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+
+        # Create file table
+        self.file_table = FileTable(content_frame)
+        self.file_table.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Create preview pane (initially visible)
+        self.preview_pane = PreviewPane(content_frame, width=300)
+        self.preview_pane.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 0))
+        self.preview_visible = True
+
+        # Bind file selection to preview update
+        self.file_table.tree.bind('<<TreeviewSelect>>', self._on_file_select)
 
         # Bottom status bar
         self._create_statusbar(main_frame)
@@ -581,6 +599,29 @@ class MainWindow:
             "- Scan entire drives\n"
             "- Filter by category, size, and age\n"
             "- Right-click context menu\n"
+            "- Preview pane for images\n"
             "- Exclusion list\n"
             "- Safe deletion to Recycle Bin"
         )
+
+    def _toggle_preview(self):
+        """Toggle the preview pane visibility."""
+        if self.preview_var.get():
+            self.preview_pane.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 0))
+            self.preview_visible = True
+        else:
+            self.preview_pane.pack_forget()
+            self.preview_visible = False
+
+    def _on_file_select(self, event=None):
+        """Handle file selection - update preview pane."""
+        # Update selection info
+        self._update_selection_info()
+
+        # Update preview pane if visible
+        if self.preview_visible:
+            selected = self.file_table.get_selected_files()
+            if len(selected) == 1:
+                self.preview_pane.show_file(selected[0])
+            else:
+                self.preview_pane.clear()
