@@ -2,10 +2,7 @@
 
 import unittest
 import time
-import sys
 import os
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scanner import FileInfo
 from analyzer import (

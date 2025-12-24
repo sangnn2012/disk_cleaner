@@ -3,10 +3,7 @@
 import unittest
 import tempfile
 import os
-import sys
 import time
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scanner import FileInfo, scan_directory, scan_multiple_paths, SKIP_FOLDERS
 

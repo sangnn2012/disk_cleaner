@@ -3,10 +3,6 @@
 import unittest
 import time
 from datetime import datetime, timedelta
-import sys
-import os
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils import format_size, format_date, days_since, get_available_drives
 

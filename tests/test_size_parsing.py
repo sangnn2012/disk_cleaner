@@ -1,10 +1,6 @@
 """Unit tests for size parsing in main_window."""
 
 import unittest
-import sys
-import os
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class TestSizeParsing(unittest.TestCase):
