@@ -4,11 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 import threading
 import json
-import sys
 import os
-
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils import format_size, get_available_drives
 from scanner import scan_multiple_paths
