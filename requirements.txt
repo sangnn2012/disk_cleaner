@@ -1,0 +1,4 @@
+# Disk Space Analyzer dependencies
+
+# Safe file deletion (moves to recycle bin instead of permanent delete)
+send2trash>=1.8.0
