@@ -1,1 +1,1 @@
-# Test package for disk cleaner
+"""Test package for Disk Space Analyzer."""
