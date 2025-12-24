@@ -1,28 +1,30 @@
 #!/usr/bin/env python
-"""Run all unit tests for the disk cleaner application."""
+"""Run all unit tests for the disk cleaner application.
+
+Usage:
+    python run_tests.py          # Run with unittest
+    pytest                       # Run with pytest (if installed)
+"""
 
 import unittest
 import sys
-import os
+from pathlib import Path
 
-# Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add project root to path for imports
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
 
 
 def run_tests():
     """Discover and run all tests."""
-    # Get the tests directory
-    tests_dir = os.path.join(os.path.dirname(__file__), 'tests')
+    tests_dir = project_root / 'tests'
 
-    # Create test suite
     loader = unittest.TestLoader()
-    suite = loader.discover(tests_dir, pattern='test_*.py')
+    suite = loader.discover(str(tests_dir), pattern='test_*.py')
 
-    # Run tests with verbosity
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
 
-    # Return exit code based on results
     return 0 if result.wasSuccessful() else 1
 
 

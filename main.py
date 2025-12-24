@@ -14,11 +14,11 @@ Requirements:
 import tkinter as tk
 from tkinter import ttk
 import sys
-import os
+from pathlib import Path
 
-# Ensure the script can find its modules
-script_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, script_dir)
+# Add project root to path for imports when running directly
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
 
 from ui.main_window import MainWindow
 
@@ -48,20 +48,10 @@ def configure_styles():
 
 def main():
     """Main entry point."""
-    # Create root window
     root = tk.Tk()
 
-    # Set icon if available
-    try:
-        # You can add an icon file here
-        pass
-    except Exception:
-        pass
-
-    # Configure styles
     configure_styles()
 
-    # Create main window
     app = MainWindow(root)
 
     # Center window on screen
@@ -72,7 +62,6 @@ def main():
     y = (root.winfo_screenheight() // 2) - (height // 2)
     root.geometry(f'+{x}+{y}')
 
-    # Run the application
     root.mainloop()
 
 
